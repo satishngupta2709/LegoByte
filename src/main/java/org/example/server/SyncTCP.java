@@ -24,7 +24,7 @@ public class SyncTCP {
             ServerSocket serverSocket = new ServerSocket(port);
             while (true){
                 logger.info("in while");
-                Socket clientSocket = serverSocket.accept();
+                final Socket clientSocket = serverSocket.accept();
                 concurrent_connection+=1;
                 logger.info("Client connected with address: "+clientSocket.getInetAddress() + " concurrent client connection: "+concurrent_connection);
                 while (true){
@@ -51,7 +51,7 @@ public class SyncTCP {
 
     }
 
-    public static LegoByteCmd readCommand(Socket connection) throws Exception {
+    public static LegoByteCmd   readCommand(Socket connection) throws Exception {
         InputStream inputStream = connection.getInputStream();
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
 
