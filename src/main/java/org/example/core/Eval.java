@@ -37,4 +37,24 @@ public class Eval {
         outputStream.write(b);
         outputStream.flush();
     }
+
+    public static byte[] evalToBytes(LegoByteCmd cmd) throws Exception {
+        switch (cmd.Cmd()){
+            case "PING":
+                return evalPingToBytes(cmd.Args());
+            default:
+                return evalPingToBytes(cmd.Args());
+        }
+    }
+
+    public static byte[] evalPingToBytes(String[] args) throws Exception {
+        if (args.length >= 2){
+            throw new Exception("ERR wrong number of arguments for 'ping' command");
+        }
+        if (args.length == 0){
+            return Resp.encode("PONG", true);
+        } else {
+            return Resp.encode(args[0], false);
+        }
+    }
 }

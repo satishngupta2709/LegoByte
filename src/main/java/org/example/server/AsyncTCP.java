@@ -135,7 +135,7 @@ public class AsyncTCP {
 
     private static void respond(LegoByteCmd cmd, SocketChannel client) throws IOException {
         try {
-            byte[] responseBytes = evalToBytes(cmd);
+            byte[] responseBytes = Eval.evalToBytes(cmd);
             writeFully(client, responseBytes);
         } catch (Exception e){
             respondError(e, client);
@@ -155,26 +155,6 @@ public class AsyncTCP {
                 // Yield briefly to avoid tight loop; selector will wake on next readiness
                 try { Thread.yield(); } catch (Exception ignored) {}
             }
-        }
-    }
-
-    private static byte[] evalToBytes(LegoByteCmd cmd) throws Exception {
-        switch (cmd.Cmd()){
-            case "PING":
-                return evalPingToBytes(cmd.Args());
-            default:
-                return evalPingToBytes(cmd.Args());
-        }
-    }
-
-    private static byte[] evalPingToBytes(String[] args) throws Exception {
-        if (args.length >= 2){
-            throw new Exception("ERR wrong number of arguments for 'ping' command");
-        }
-        if (args.length == 0){
-            return Resp.encode("PONG", true);
-        } else {
-            return Resp.encode(args[0], false);
         }
     }
 
