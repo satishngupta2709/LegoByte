@@ -10,6 +10,10 @@ public class Resp {
 
     public static List<String> decodeArrayString(byte[] data) throws Exception {
         var value = decode(data);
+        if(value instanceof String){
+            return  Arrays.stream(((String) value).split(" ")).toList();
+        }
+
         List<String> res = new ArrayList<>();
 
         if (! (value instanceof List<?>)){
