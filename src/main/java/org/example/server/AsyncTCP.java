@@ -1,6 +1,7 @@
 package org.example.server;
 
 import org.example.core.Eval;
+import org.example.core.Expire;
 import org.example.core.Resp;
 import org.example.model.LegoByteCmd;
 
@@ -14,6 +15,8 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.*;
 import java.util.logging.Logger;
 
@@ -22,6 +25,8 @@ import static org.example.core.Resp.decodeArrayString;
 public class AsyncTCP {
 
     private static int concurrent_connection=0;
+    private static Duration crnnFrequency= Duration.ofSeconds(1);
+    private static Instant lastCronExecutionTime = Instant.now();
     private  static final Logger logger= Logger.getLogger(AsyncTCP.class.getName());
 
     public static void RunAsyncTCPServer(String host, int port){
@@ -38,6 +43,12 @@ public class AsyncTCP {
             ByteBuffer readBuffer = ByteBuffer.allocate(8192);
 
             while (true){
+
+                if (Instant.now().isAfter(lastCronExecutionTime.plus(crnnFrequency))){
+                    Expire.DeleteExpiredKey();
+                    lastCronExecutionTime=Instant.now();
+                }
+
                 selector.select();
                 Iterator<SelectionKey> iter = selector.selectedKeys().iterator();
                 while (iter.hasNext()){
