@@ -16,13 +16,13 @@ public class Resp {
 
         List<String> res = new ArrayList<>();
 
-        if (! (value instanceof List<?>)){
+        if (! (value instanceof ArrayList<?>)){
 
             res.add(value.toString());
             return res;
         } else {
-            List<?> ts = List.of(value);
-            for(var e : ts){
+
+            for(var e : ((ArrayList<?>) value).toArray()){
                 res.add((String) e);
             }
 
@@ -112,7 +112,7 @@ public class Resp {
         int delta= res.getDelta();
         pos+=delta;
 
-        String result = new String(data, pos, pos+ len, StandardCharsets.UTF_8);
+        String result = new String(data, pos-1,  len, StandardCharsets.UTF_8);
         int bytesRead = pos + len + 2; // +2 for CRLF
 
         return (DecodeResult<T>) new DecodeResult<>(result,bytesRead);
@@ -150,9 +150,9 @@ public class Resp {
         pos+=delta;
         List<T> elements = new ArrayList<T>();
         for(int i=0;i<count;i++){
-            DecodeResult<T> decodeResult = decodeOne(Arrays.copyOfRange(data, pos, data.length));
+            DecodeResult<T> decodeResult = decodeOne(Arrays.copyOfRange(data, pos-1, data.length));
             elements.add(decodeResult.getValue());
-            pos+=decodeResult.getDelta();
+            pos+=decodeResult.getDelta()-1;
         }
         return (DecodeResult<T>) new DecodeResult<>(elements,pos);
     }

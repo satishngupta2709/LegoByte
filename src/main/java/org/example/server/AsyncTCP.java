@@ -76,12 +76,15 @@ public class AsyncTCP {
                             while (readBuffer.hasRemaining()){
                                 byte b = readBuffer.get();
                                 acc.write(b);
-                                if (b == '\n'){
-                                    byte[] full = acc.toByteArray();
-                                    processLine(client, full, acc.size());
-                                    acc.reset();
-                                }
+//                                if (b == '\n'){
+//                                    byte[] full = acc.toByteArray();
+//                                    processLine(client, full, acc.size());
+//                                    acc.reset();
+//                                }
                             }
+                            byte[] full = acc.toByteArray();
+                            processLine(client, full, acc.size());
+                            acc.reset();
                             readBuffer.clear();
                         }
                     } catch (Exception e){
