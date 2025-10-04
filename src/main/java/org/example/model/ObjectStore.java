@@ -26,4 +26,8 @@ public class ObjectStore<T> {
         return expiresAt !=-1  && Instant.now().toEpochMilli() >= expiresAt;
     }
 
+    public void setExiresAt(long expiresAt){
+        this.expiresAt=expiresAt;
+    }
+
 }

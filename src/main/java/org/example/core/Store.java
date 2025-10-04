@@ -15,5 +15,15 @@ public class Store {
     public static ObjectStore Get(String key){
         return store.get(key);
     }
+    public static boolean Del(String key){
+        try {
+            ObjectStore r= store.remove(key);
+            return true;
+        }catch (Exception e){
+            return false;
+        }
+
+
+    }
 
 }

@@ -41,20 +41,45 @@ public class Eval {
     }
 
     public static byte[] evalToBytes(LegoByteCmd cmd) throws Exception {
-        switch (cmd.Cmd()){
-            case "PING":
-                return evalPingToBytes(cmd.Args());
+        return switch (cmd.Cmd()) {
+            case "PING" -> evalPingToBytes(cmd.Args());
+            case "SET" -> evalSETToBytes(cmd.Args());
+            case "GET" -> evalGETToBytes(cmd.Args());
+            case "TTL" -> evalTTLToByte(cmd.Args());
+            case "DEL" -> evalDELToByte(cmd.Args());
+            case "EXPIRE" -> evalEXPIREToByte(cmd.Args());
+            default -> evalPingToBytes(cmd.Args());
+        };
+    }
 
-            case "SET":
-                return  evalSETToBytes(cmd.Args());
-
-            case "GET":
-                return evalGETToBytes(cmd.Args());
-            case "TTL":
-                return evalTTLToByte(cmd.Args());
-            default:
-                return evalPingToBytes(cmd.Args());
+    private static byte[] evalEXPIREToByte(String[] args) throws Exception {
+        if(args.length<=1){
+            throw new Exception("(error) ERR wrong number of arguments for 'expire' command");
         }
+        String key= args[0];
+        int exDurationSec=0;
+        try{
+            exDurationSec= Integer.parseInt(args[1]);
+        }catch (Exception e){
+            throw new Exception("(error) ERR value is not an integer or out of range");
+        }
+        ObjectStore obj = Store.Get(key);
+        if (obj==null){
+            return "0".getBytes();
+        }
+        long expireAt= obj.getExpiresAt()+exDurationSec* 1000L;
+
+        obj.setExiresAt(expireAt);
+        return "1".getBytes();
+    }
+
+    private static byte[] evalDELToByte(String[] args) {
+        int countDeleted=0;
+        for(int i =0;i<args.length;i++){
+            Store.Del(args[i]);
+            countDeleted++;
+        }
+        return Resp.encode(countDeleted,false);
     }
 
     private static byte[] evalTTLToByte(String[] args) throws Exception {

@@ -170,7 +170,11 @@ public class Resp {
             }
             String s = "$"+ value.toString().length() +"\r\n" + value.toString() +"\r\n";
             return s.getBytes();
+        } else if (value instanceof Integer) {
+            String s=":"+value.toString()+"\r\n";
+            return s.getBytes();
         }
-        return new byte[]{};
+        String s = "$-1\r\n";
+        return s.getBytes();
     }
 }
