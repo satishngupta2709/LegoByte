@@ -119,6 +119,7 @@ public class Eval {
                       throw e;
                   }
                   exDurationMs=exDurationMs*1000;
+                  break;
                 default:
                     throw new Exception("ERR syntax error");
 
