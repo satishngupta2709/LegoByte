@@ -55,6 +55,7 @@ public class Eval {
                 case "TTL" -> result = evalTTLToByte(cmd.Args());
                 case "DEL" -> result = evalDELToByte(cmd.Args());
                 case "EXPIRE" -> result = evalEXPIREToByte(cmd.Args());
+                case "BGREWRITEAOF" -> result = evalBGREWRITEAOF(cmd.Args());
                 default -> result = evalPingToBytes(cmd.Args());
             }
 
@@ -65,6 +66,11 @@ public class Eval {
 
         return output.toByteArray();
 
+    }
+// TODO: Make it async by forking a new process
+    private static byte[] evalBGREWRITEAOF(String[] args) throws Exception{
+        AOF.dumpAllAOF();
+        return Resp.encode("OK",false);
     }
 
     private static byte[] evalEXPIREToByte(String[] args) throws Exception {

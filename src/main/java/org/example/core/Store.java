@@ -14,6 +14,10 @@ public class Store {
     private  static final Logger logger= Logger.getLogger(Store.class.getName());
     private static Map<String, ObjectStore> store = new HashMap<>();
 
+    public static Map<String, ObjectStore> snapshot(){
+        return new HashMap<>(store);
+    }
+
     public static void Put(String key,ObjectStore obj){
         if(store.size()>= Configuration.KeyLimit){
             Eviction.evict();
@@ -73,5 +77,8 @@ public class Store {
         }
         logger.info("Eviction called "+store.size());
     }
+
+
+
 
 }
