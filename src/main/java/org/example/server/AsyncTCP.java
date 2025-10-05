@@ -20,6 +20,7 @@ import java.time.Instant;
 import java.util.*;
 import java.util.logging.Logger;
 
+import static org.example.core.Resp.decode;
 import static org.example.core.Resp.decodeArrayString;
 
 public class AsyncTCP {
@@ -137,19 +138,26 @@ public class AsyncTCP {
             line = Arrays.copyOf(line, line.length-1);
         }
 
-        List<String> tokens = decodeArrayString(line);
-        if (tokens.isEmpty()){
-            throw new IOException("Empty command received");
+        List<LegoByteCmd> cmds = new ArrayList<>();
+        var value = decode(line);
+        for(var a : value){
+            List<String> tokens = decodeArrayString(a);
+            if (tokens.isEmpty()){
+                throw new IOException("Empty command received");
+            }
+            String[] args = tokens.subList(1, tokens.size()).toArray(new String[0]);
+            LegoByteCmd cmd = new LegoByteCmd(tokens.get(0).toUpperCase(), args);
+            cmds.add(cmd);
+            logger.info("command "+ cmd.Cmd());
         }
-        String[] args = tokens.subList(1, tokens.size()).toArray(new String[0]);
-        LegoByteCmd cmd = new LegoByteCmd(tokens.get(0).toUpperCase(), args);
-        logger.info("command "+ cmd.Cmd());
-        respond(cmd, client);
+
+
+        respond(cmds, client);
     }
 
-    private static void respond(LegoByteCmd cmd, SocketChannel client) throws IOException {
+    private static void respond(List<LegoByteCmd> cmds, SocketChannel client) throws IOException {
         try {
-            byte[] responseBytes = Eval.evalToBytes(cmd);
+            byte[] responseBytes = Eval.evalToBytes(cmds);
             writeFully(client, responseBytes);
         } catch (Exception e){
             respondError(e, client);

@@ -3,10 +3,12 @@ package org.example.core;
 import org.example.model.LegoByteCmd;
 import org.example.model.ObjectStore;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.Socket;
 import java.time.Instant;
+import java.util.List;
 
 import static org.example.core.Resp.encode;
 
@@ -40,16 +42,29 @@ public class Eval {
         outputStream.flush();
     }
 
-    public static byte[] evalToBytes(LegoByteCmd cmd) throws Exception {
-        return switch (cmd.Cmd()) {
-            case "PING" -> evalPingToBytes(cmd.Args());
-            case "SET" -> evalSETToBytes(cmd.Args());
-            case "GET" -> evalGETToBytes(cmd.Args());
-            case "TTL" -> evalTTLToByte(cmd.Args());
-            case "DEL" -> evalDELToByte(cmd.Args());
-            case "EXPIRE" -> evalEXPIREToByte(cmd.Args());
-            default -> evalPingToBytes(cmd.Args());
-        };
+    public static byte[] evalToBytes(List<LegoByteCmd> cmds) throws Exception {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        for (LegoByteCmd cmd : cmds) {
+            byte[] result;
+
+            switch (cmd.Cmd()) {
+                case "PING" -> result = evalPingToBytes(cmd.Args());
+                case "SET" -> result = evalSETToBytes(cmd.Args());
+                case "GET" -> result = evalGETToBytes(cmd.Args());
+                case "TTL" -> result = evalTTLToByte(cmd.Args());
+                case "DEL" -> result = evalDELToByte(cmd.Args());
+                case "EXPIRE" -> result = evalEXPIREToByte(cmd.Args());
+                default -> result = evalPingToBytes(cmd.Args());
+            }
+
+            if (result != null) {
+                output.write(result);
+            }
+        }
+
+        return output.toByteArray();
+
     }
 
     private static byte[] evalEXPIREToByte(String[] args) throws Exception {

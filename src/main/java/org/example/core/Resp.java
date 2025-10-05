@@ -8,8 +8,8 @@ import java.util.List;
 
 public class Resp {
 
-    public static List<String> decodeArrayString(byte[] data) throws Exception {
-        var value = decode(data);
+    public static <T> List<String> decodeArrayString(T value) throws Exception {
+
         if(value instanceof String){
             return  Arrays.stream(((String) value).split(" ")).toList();
         }
@@ -33,12 +33,20 @@ public class Resp {
 
 
 
-    public static <T> T decode(byte[] data) throws Exception {
+    public static <T> List<T> decode(byte[] data) throws Exception {
         if (data == null || data.length == 0) {
             throw new Exception("no data");
         }
-        DecodeResult<T> result = decodeOne(data);
-        return result.getValue();
+        List<T> values = new ArrayList<>();
+        int index=0;
+        while (index<data.length){
+
+            DecodeResult<T> result = decodeOne(Arrays.copyOfRange(data, index, data.length));
+            index=index+result.getDelta()-1;
+            values.add(result.getValue());
+        }
+
+        return values;
     }
 
     public static <T>  DecodeResult<T> decodeOne(byte[] data) throws Exception {
