@@ -2,6 +2,8 @@ package org.example.core;
 
 import org.example.model.LegoByteCmd;
 import org.example.model.ObjectStore;
+import org.example.model.ValueType;
+import org.example.model.Encoding;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -144,7 +146,7 @@ public class Eval {
 
     private static byte[] evalSETToBytes(String[] args) throws Exception {
         if(args.length <=1){
-            throw  new Exception("ERR wrong number of arguments for 'set' command");
+            return Resp.encode("ERR wrong number of arguments for 'set' command",false);
         }
         String key= args[0];
         String value =args[1];
@@ -157,7 +159,7 @@ public class Eval {
                 case "ex":
                   i++;
                   if(i==args.length){
-                      throw new Exception("ERR syntax error");
+                      return Resp.encode("ERR syntax error",false);
                   }
                   try {
                       exDurationMs = Integer.parseInt(args[3]);
@@ -167,18 +169,31 @@ public class Eval {
                   exDurationMs=exDurationMs*1000;
                   break;
                 default:
-                    throw new Exception("ERR syntax error");
+                    return Resp.encode("ERR syntax error",false);
 
             }
         }
-        var data = new ObjectStore<String>(value,exDurationMs);
+        // Determine internal encoding for string value
+        Encoding encoding = Encoding.RAW;
+        if (value != null) {
+            try {
+                // Detect if the provided value is an integer. We do not change client-visible type,
+                // only the internal encoding metadata.
+                Long.parseLong(value);
+                encoding = Encoding.INT;
+            } catch (NumberFormatException ignored) {
+                encoding = Encoding.RAW;
+            }
+        }
+
+        var data = new ObjectStore<String>(value, exDurationMs, ValueType.STRING, encoding);
         Store.Put(key,data);
         return Resp.encode("OK",false);
     }
 
     public static byte[] evalPingToBytes(String[] args) throws Exception {
         if (args.length >= 2){
-            throw new Exception("ERR wrong number of arguments for 'ping' command");
+            return Resp.encode("ERR wrong number of arguments for 'ping' command",false);
         }
         if (args.length == 0){
             return Resp.encode("PONG", true);
