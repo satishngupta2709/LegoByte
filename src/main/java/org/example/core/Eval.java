@@ -6,7 +6,6 @@ import org.example.model.ValueType;
 import org.example.model.Encoding;
 
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.io.OutputStream;
 import java.net.Socket;
 import java.time.Instant;
@@ -58,6 +57,7 @@ public class Eval {
                 case "DEL" -> result = evalDELToByte(cmd.Args());
                 case "EXPIRE" -> result = evalEXPIREToByte(cmd.Args());
                 case "BGREWRITEAOF" -> result = evalBGREWRITEAOF(cmd.Args());
+                case "INCRBY" -> result = evalINCR(cmd.Args());
                 default -> result = evalPingToBytes(cmd.Args());
             }
 
@@ -69,7 +69,38 @@ public class Eval {
         return output.toByteArray();
 
     }
-// TODO: Make it async by forking a new process
+
+    private static byte[] evalINCR(String[] args) throws Exception{
+        if(args.length<1){
+            return Resp.encode("ERR wrong number of arguments for 'incr' command",false);
+        }
+        String key = args[0];
+        ObjectStore<String> obj = Store.Get(key);
+        if(obj==null){
+            // Create with 0, no expiry
+            obj = new ObjectStore<>("0", -1, ValueType.STRING, Encoding.INT);
+            Store.Put(key, obj);
+        }
+
+        String current = obj.getValue();
+        if (current == null) {
+            current = "0";
+        }
+        long num;
+        try {
+            num = Long.parseLong(current);
+        } catch (NumberFormatException e) {
+            return  Resp.encode("ERR value is not an integer or out of range",false);
+        }
+        num += 1L;
+        obj.setValue(Long.toString(num));
+        obj.setType(ValueType.STRING);
+        obj.setEncoding(Encoding.INT);
+        return Resp.encode((int)num,false);
+
+    }
+
+    // TODO: Make it async by forking a new process
     private static byte[] evalBGREWRITEAOF(String[] args) throws Exception{
         AOF.dumpAllAOF();
         return Resp.encode("OK",false);
@@ -193,6 +224,7 @@ public class Eval {
 
     public static byte[] evalPingToBytes(String[] args) throws Exception {
         if (args.length >= 2){
+            //throw new Exception("err");
             return Resp.encode("ERR wrong number of arguments for 'ping' command",false);
         }
         if (args.length == 0){

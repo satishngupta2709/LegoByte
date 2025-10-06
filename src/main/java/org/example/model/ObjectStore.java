@@ -26,6 +26,10 @@ public class ObjectStore<T> {
         return value;
     }
 
+    public void setValue(T value) {
+        this.value = value;
+    }
+
     public long getExpiresAt() {
         return expiresAt;
     }
