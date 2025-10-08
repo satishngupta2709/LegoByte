@@ -139,8 +139,8 @@ public class AsyncTCP {
         }
 
         List<LegoByteCmd> cmds = new ArrayList<>();
-        var value = decode(line);
-        for(var a : value){
+        List<Object> value = decode(line);
+        for(Object a : value){
             List<String> tokens = decodeArrayString(a);
             if (tokens.isEmpty()){
                 throw new IOException("Empty command received");
