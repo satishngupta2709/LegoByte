@@ -46,6 +46,9 @@ public class Store {
 
     }
 
+    public static long size(){
+        return store.size();
+    }
     public static double expireSample(){
         int limit= 10;
         int expiredCount=0;
@@ -69,14 +72,7 @@ public class Store {
         return (double) expiredCount /20;
     }
 
-    public static void evictFirst(){
-
-        for(String key : store.keySet() ){
-            store.remove(key);
-            break;
-        }
-        logger.info("Eviction called "+store.size());
-    }
+   
 
 
 
