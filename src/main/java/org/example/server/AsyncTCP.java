@@ -25,7 +25,7 @@ import static org.example.core.Resp.decodeArrayString;
 
 public class AsyncTCP {
 
-    private static int concurrent_connection=0;
+    private static volatile int concurrent_connection=0;
     private static Duration crnnFrequency= Duration.ofSeconds(1);
     private static Instant lastCronExecutionTime = Instant.now();
     private  static final Logger logger= Logger.getLogger(AsyncTCP.class.getName());
@@ -178,6 +178,10 @@ public class AsyncTCP {
                 try { Thread.yield(); } catch (Exception ignored) {}
             }
         }
+    }
+
+    public static int getConnectedClients() {
+        return concurrent_connection;
     }
 
     private static void closeClient(SocketChannel client, Map<SocketChannel, ByteArrayOutputStream> channelBuffers){

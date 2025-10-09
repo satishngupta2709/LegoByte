@@ -58,6 +58,9 @@ public class Eval {
                 case "EXPIRE" -> result = evalEXPIREToByte(cmd.Args());
                 case "BGREWRITEAOF" -> result = evalBGREWRITEAOF(cmd.Args());
                 case "INCRBY" -> result = evalINCR(cmd.Args());
+                case "INFO" -> result = evalINFO(cmd.Args());
+                case "CLIENT" -> result = evalCLIENT(cmd.Args());
+                case "LATENCY" -> result = evalLATENCY(cmd.Args());
                 default -> result = evalPingToBytes(cmd.Args());
             }
 
@@ -69,6 +72,8 @@ public class Eval {
         return output.toByteArray();
 
     }
+
+
 
     private static byte[] evalINCR(String[] args) throws Exception{
         if(args.length<1){
@@ -232,5 +237,149 @@ public class Eval {
         } else {
             return Resp.encode(args[0], false);
         }
+    }
+
+    private static byte[] evalINFO(String[] args) {
+        StringBuilder info = new StringBuilder();
+        info.append("# Server\n");
+        info.append("legoByte_version:0.0.1\n");
+        info.append("os:").append(System.getProperty("os.name")).append("\n");
+        info.append("arch_bits:").append(System.getProperty("os.arch").contains("64") ? "64" : "32").append("\n");
+        info.append("process_id:").append(ProcessHandle.current().pid()).append("\n");
+
+        info.append("\n# Memory\n");
+        Runtime runtime = Runtime.getRuntime();
+        long totalMemory = runtime.totalMemory();
+        long freeMemory = runtime.freeMemory();
+        long usedMemory = totalMemory - freeMemory;
+        info.append("used_memory:").append(usedMemory).append("\n");
+        info.append("used_memory_human:").append(formatBytes(usedMemory)).append("\n");
+        info.append("total_system_memory:").append(runtime.maxMemory()).append("\n");
+
+        info.append("\n# Stats\n");
+        info.append("total_connections_received:0\n");
+        info.append("total_commands_processed:0\n");
+        info.append("instantaneous_ops_per_sec:0\n");
+        info.append("connected_clients:").append(org.example.server.AsyncTCP.getConnectedClients()).append("\n");
+        
+        info.append("\n# Keyspace\n");
+        info.append("db0:keys=").append(Store.snapshot().size()).append(",expires=0,avg_ttl=0\n");
+        
+        return Resp.encode(info.toString(), false);
+    }
+
+    private static byte[] evalCLIENT(String[] args) throws Exception {
+        if (args.length < 1) {
+            return Resp.encode("ERR wrong number of arguments for 'client' command", false);
+        }
+        
+        String subcommand = args[0].toUpperCase();
+        switch (subcommand) {
+            case "LIST":
+                return evalCLIENT_LIST(args);
+            case "INFO":
+                return evalCLIENT_INFO(args);
+            case "SETNAME":
+                return evalCLIENT_SETNAME(args);
+            case "GETNAME":
+                return evalCLIENT_GETNAME(args);
+            default:
+                return Resp.encode("ERR unknown subcommand '" + subcommand + "'", false);
+        }
+    }
+
+    private static byte[] evalCLIENT_LIST(String[] args) throws Exception {
+        // Simple client list - in a real implementation, you'd track active connections
+        StringBuilder clients = new StringBuilder();
+        clients.append("id=1 addr=127.0.0.1:12345 fd=8 name= age=0 idle=0 flags=N db=0 sub=0 psub=0 multi=-1 qbuf=0 qbuf-free=0 obl=0 oll=0 omem=0 events=r cmd=client\n");
+        return Resp.encode(clients.toString(), false);
+    }
+
+    private static byte[] evalCLIENT_INFO(String[] args) throws Exception {
+        StringBuilder info = new StringBuilder();
+        info.append("id=1\n");
+        info.append("addr=127.0.0.1:12345\n");
+        info.append("fd=8\n");
+        info.append("name=\n");
+        info.append("age=0\n");
+        info.append("idle=0\n");
+        info.append("flags=N\n");
+        info.append("db=0\n");
+        info.append("sub=0\n");
+        info.append("psub=0\n");
+        info.append("multi=-1\n");
+        info.append("qbuf=0\n");
+        info.append("qbuf-free=0\n");
+        info.append("obl=0\n");
+        info.append("oll=0\n");
+        info.append("omem=0\n");
+        info.append("events=r\n");
+        info.append("cmd=client\n");
+        return Resp.encode(info.toString(), false);
+    }
+
+    private static byte[] evalCLIENT_SETNAME(String[] args) throws Exception {
+        if (args.length < 2) {
+            return Resp.encode("ERR wrong number of arguments for 'client setname' command", false);
+        }
+        // In a real implementation, you'd store the client name
+        return Resp.encode("OK", false);
+    }
+
+    private static byte[] evalCLIENT_GETNAME(String[] args) throws Exception {
+        // In a real implementation, you'd return the actual client name
+        return Resp.encode("", false); // Empty string means no name set
+    }
+
+    private static byte[] evalLATENCY(String[] args) throws Exception {
+        if (args.length < 1) {
+            return Resp.encode("ERR wrong number of arguments for 'latency' command", false);
+        }
+        
+        String subcommand = args[0].toUpperCase();
+        switch (subcommand) {
+            case "LATEST":
+                return evalLATENCY_LATEST(args);
+            case "HISTORY":
+                return evalLATENCY_HISTORY(args);
+            case "RESET":
+                return evalLATENCY_RESET(args);
+            case "DOCTOR":
+                return evalLATENCY_DOCTOR(args);
+            default:
+                return Resp.encode("ERR unknown subcommand '" + subcommand + "'", false);
+        }
+    }
+
+    private static byte[] evalLATENCY_LATEST(String[] args) throws Exception {
+        // Return empty array - no latency events recorded
+        return Resp.encode("", false);
+    }
+
+    private static byte[] evalLATENCY_HISTORY(String[] args) throws Exception {
+        if (args.length < 2) {
+            return Resp.encode("ERR wrong number of arguments for 'latency history' command", false);
+        }
+        // Return empty array - no latency history
+        return Resp.encode("", false);
+    }
+
+    private static byte[] evalLATENCY_RESET(String[] args) throws Exception {
+        // Reset latency tracking (no-op in this implementation)
+        return Resp.encode("OK", false);
+    }
+
+    private static byte[] evalLATENCY_DOCTOR(String[] args) throws Exception {
+        StringBuilder doctor = new StringBuilder();
+        doctor.append("I'm sorry, I can't help you with latency issues. ");
+        doctor.append("I am just a simple LegoByte server and don't have advanced latency monitoring capabilities.");
+        return Resp.encode(doctor.toString(), false);
+    }
+
+    private static String formatBytes(long bytes) {
+        if (bytes < 1024) return bytes + "B";
+        if (bytes < 1024 * 1024) return String.format("%.1fK", bytes / 1024.0);
+        if (bytes < 1024 * 1024 * 1024) return String.format("%.1fM", bytes / (1024.0 * 1024.0));
+        return String.format("%.1fG", bytes / (1024.0 * 1024.0 * 1024.0));
     }
 }
