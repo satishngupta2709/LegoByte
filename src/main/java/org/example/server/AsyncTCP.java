@@ -29,6 +29,9 @@ public class AsyncTCP {
     private static Duration crnnFrequency= Duration.ofSeconds(1);
     private static Instant lastCronExecutionTime = Instant.now();
     private  static final Logger logger= Logger.getLogger(AsyncTCP.class.getName());
+    private static volatile boolean isShuttingDown = false;
+    private static volatile ServerSocketChannel serverChannel = null;
+    private static volatile Selector mainSelector = null;
 
     public static void RunAsyncTCPServer(String host, int port){
         logger.info("Starting an asynchronous TCP server on,"+host +":"+port);
@@ -36,6 +39,9 @@ public class AsyncTCP {
         try (Selector selector = Selector.open();
              ServerSocketChannel server = ServerSocketChannel.open()) {
 
+            serverChannel = server;
+            mainSelector = selector;
+            
             server.configureBlocking(false);
             server.bind(new InetSocketAddress(host, port));
             server.register(selector, SelectionKey.OP_ACCEPT);
@@ -43,7 +49,7 @@ public class AsyncTCP {
             Map<SocketChannel, ByteArrayOutputStream> channelBuffers = new HashMap<>();
             ByteBuffer readBuffer = ByteBuffer.allocate(8192);
 
-            while (true){
+            while (!isShuttingDown){
 
                 if (Instant.now().isAfter(lastCronExecutionTime.plus(crnnFrequency))){
                     Expire.DeleteExpiredKey();
@@ -60,6 +66,10 @@ public class AsyncTCP {
                             continue;
                         }
                         if (key.isAcceptable()){
+                            // Stop accepting new connections during shutdown
+                            if (isShuttingDown) {
+                                continue;
+                            }
                             ServerSocketChannel ssc = (ServerSocketChannel) key.channel();
                             SocketChannel client = ssc.accept();
                             if (client != null){
@@ -115,6 +125,8 @@ public class AsyncTCP {
 
         } catch (IOException e){
             logger.warning("Error occurred while creating Async Socket Server: "+ e.getMessage());
+        } finally {
+            logger.info("Server shutting down ...");
         }
 
     }
@@ -193,5 +205,62 @@ public class AsyncTCP {
         try {
             logger.info("client disconnected , "+ client.getRemoteAddress()+" concurrent connection: "+ concurrent_connection);
         } catch (IOException ignored) {}
+    }
+
+    /**
+     * Initiates graceful shutdown of the server
+     * Similar to Redis SHUTDOWN command behavior
+     */
+    public static void initiateShutdown() {
+        if (isShuttingDown) {
+            logger.info("Shutdown already in progress...");
+            return;
+        }
+        
+        logger.info("Initiating graceful shutdown...");
+        isShuttingDown = true;
+        
+        // Wakeup selector to process the shutdown flag
+        if (mainSelector != null) {
+            mainSelector.wakeup();
+        }
+    }
+
+    /**
+     * Waits for all active connections to finish with a timeout
+     * @param timeoutSeconds maximum time to wait for connections to finish
+     */
+    public static void waitForConnectionsToFinish(int timeoutSeconds) {
+        logger.info("Waiting for " + concurrent_connection + " active connections to finish (timeout: " + timeoutSeconds + "s)...");
+        
+        long startTime = System.currentTimeMillis();
+        long timeoutMillis = timeoutSeconds * 1000L;
+        
+        while (concurrent_connection > 0) {
+            long elapsed = System.currentTimeMillis() - startTime;
+            if (elapsed >= timeoutMillis) {
+                logger.warning("Timeout reached. Forcing shutdown with " + concurrent_connection + " active connections remaining.");
+                break;
+            }
+            
+            try {
+                Thread.sleep(100); // Check every 100ms
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                logger.warning("Interrupted while waiting for connections to finish.");
+                break;
+            }
+        }
+        
+        if (concurrent_connection == 0) {
+            logger.info("All client connections closed successfully.");
+        }
+    }
+
+    /**
+     * Returns true if the server is shutting down
+     */
+    public static boolean isShuttingDown() {
+        return isShuttingDown;
     }
 }

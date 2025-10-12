@@ -1,8 +1,11 @@
 package org.example.core;
 
+import java.util.logging.Logger;
 public class AOF {
 
+	private static final Logger logger= Logger.getLogger(AOF.class.getName());
 	public static void dumpAllAOF() throws java.io.IOException {
+		logger.info("Dumping all AOF files");
 		java.nio.file.Path path = java.nio.file.Paths.get(org.example.config.Configuration.AOFFile);
 		try (java.io.BufferedWriter writer = java.nio.file.Files.newBufferedWriter(path,
 				java.nio.charset.StandardCharsets.UTF_8,

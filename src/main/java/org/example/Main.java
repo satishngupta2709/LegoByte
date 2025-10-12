@@ -1,5 +1,6 @@
 package org.example;
 
+import org.example.core.AOF;
 import org.example.core.Resp;
 import org.example.server.AsyncTCP;
 import org.example.server.SyncTCP;
@@ -28,7 +29,8 @@ public class Main {
             System.out.println("Unknown OS: " + os);
         }
 
-
+        // Register shutdown hook for graceful shutdown
+        registerShutdownHook();
 
         setupFlags(args);
         logger.info("Building the lego ...");
@@ -61,5 +63,37 @@ public class Main {
                     logger.warning("Unknown argument: " + args[i]);
             }
         }
+    }
+
+    /**
+     * Registers a shutdown hook to handle graceful shutdown on SIGTERM/SIGINT
+     * Similar to Redis shutdown behavior
+     */
+    private static void registerShutdownHook() {
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            logger.info("Received shutdown signal (SIGTERM/SIGINT)");
+            
+            // Step 1: Stop accepting new connections
+            AsyncTCP.initiateShutdown();
+            
+            // Step 2: Wait for active connections to finish (with timeout)
+            int shutdownTimeoutSeconds = 10; // Similar to Redis default
+            AsyncTCP.waitForConnectionsToFinish(shutdownTimeoutSeconds);
+            
+            // Step 3: Persist data to disk (AOF dump)
+            logger.info("Saving data to disk...");
+            try {
+                AOF.dumpAllAOF();
+                logger.info("AOF dump completed successfully.");
+            } catch (Exception e) {
+                logger.severe("Failed to dump AOF during shutdown: " + e.getMessage());
+            }
+            
+            // Step 4: Final cleanup
+            logger.info("LegoByte server shutdown complete. Goodbye!");
+            
+        }, "shutdown-hook-thread"));
+        
+        logger.info("Shutdown hook registered successfully.");
     }
 }

@@ -12,17 +12,25 @@ import java.util.List;
 import java.util.logging.Logger;
 
 import static org.example.core.Resp.decodeArrayString;
+/*
+* this is currently not used in the project
+* This class is used to create a synchronous TCP server.
+* It is used to create a synchronous TCP server.
+* It is used to create a synchronous TCP server.
 
+*/
 public class SyncTCP {
     private static int concurrent_connection=0;
     private  static final Logger logger= Logger.getLogger(SyncTCP.class.getName());
+    private static volatile boolean isShuttingDown = false;
+    private static volatile ServerSocket serverSocket = null;
 
 
     public static void RunSyncTCPServer(String host , int port){
         logger.info("Starting a synchronous TCP server on,"+host +":"+port);
         try {
-            ServerSocket serverSocket = new ServerSocket(port);
-            while (true){
+            serverSocket = new ServerSocket(port);
+            while (!isShuttingDown){
                 logger.info("in while");
                 final Socket clientSocket = serverSocket.accept();
                 concurrent_connection+=1;
@@ -97,5 +105,66 @@ public class SyncTCP {
         String err= "-"+e.getMessage()+"\r\n";
         outputStream.write(err.getBytes());
         outputStream.flush();
+    }
+
+    /**
+     * Initiates graceful shutdown of the synchronous server
+     */
+    public static void initiateShutdown() {
+        if (isShuttingDown) {
+            logger.info("Shutdown already in progress...");
+            return;
+        }
+        
+        logger.info("Initiating graceful shutdown...");
+        isShuttingDown = true;
+        
+        // Close server socket to stop accepting new connections
+        if (serverSocket != null && !serverSocket.isClosed()) {
+            try {
+                serverSocket.close();
+            } catch (IOException e) {
+                logger.warning("Error closing server socket: " + e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * Waits for all active connections to finish with a timeout
+     * @param timeoutSeconds maximum time to wait for connections to finish
+     */
+    public static void waitForConnectionsToFinish(int timeoutSeconds) {
+        logger.info("Waiting for " + concurrent_connection + " active connections to finish (timeout: " + timeoutSeconds + "s)...");
+        
+        long startTime = System.currentTimeMillis();
+        long timeoutMillis = timeoutSeconds * 1000L;
+        
+        while (concurrent_connection > 0) {
+            long elapsed = System.currentTimeMillis() - startTime;
+            if (elapsed >= timeoutMillis) {
+                logger.warning("Timeout reached. Forcing shutdown with " + concurrent_connection + " active connections remaining.");
+                break;
+            }
+            
+            try {
+                Thread.sleep(100); // Check every 100ms
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                logger.warning("Interrupted while waiting for connections to finish.");
+                break;
+            }
+        }
+        
+        if (concurrent_connection == 0) {
+            logger.info("All client connections closed successfully.");
+        }
+    }
+
+    public static int getConnectedClients() {
+        return concurrent_connection;
+    }
+
+    public static boolean isShuttingDown() {
+        return isShuttingDown;
     }
 }

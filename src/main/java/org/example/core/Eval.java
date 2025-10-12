@@ -4,17 +4,19 @@ import org.example.model.LegoByteCmd;
 import org.example.model.ObjectStore;
 import org.example.model.ValueType;
 import org.example.model.Encoding;
+import org.example.server.AsyncTCP;
 
 import java.io.ByteArrayOutputStream;
 import java.io.OutputStream;
 import java.net.Socket;
 import java.time.Instant;
 import java.util.List;
+import java.util.logging.Logger;
 
 import static org.example.core.Resp.encode;
 
 public class Eval {
-
+    private static final Logger logger= Logger.getLogger(Eval.class.getName());
     public static void evalAndRespond(LegoByteCmd cmd, Socket connection) throws Exception {
         switch (cmd.Cmd()) {
             case "PING":
@@ -61,6 +63,7 @@ public class Eval {
                 case "INFO" -> result = evalINFO(cmd.Args());
                 case "CLIENT" -> result = evalCLIENT(cmd.Args());
                 case "LATENCY" -> result = evalLATENCY(cmd.Args());
+                case "SHUTDOWN" -> result = evalSHUTDOWN(cmd.Args());
                 default -> result = evalPingToBytes(cmd.Args());
             }
 
@@ -381,5 +384,56 @@ public class Eval {
         if (bytes < 1024 * 1024) return String.format("%.1fK", bytes / 1024.0);
         if (bytes < 1024 * 1024 * 1024) return String.format("%.1fM", bytes / (1024.0 * 1024.0));
         return String.format("%.1fG", bytes / (1024.0 * 1024.0 * 1024.0));
+    }
+
+    /**
+     * Evaluates the SHUTDOWN command
+     * Similar to Redis SHUTDOWN behavior
+     * Options: NOSAVE (skip saving), SAVE (force save)
+     */
+    private static byte[] evalSHUTDOWN(String[] args) throws Exception {
+        boolean save = true; // Default: save before shutdown
+        
+        // Parse optional arguments
+        if (args.length > 0) {
+            String option = args[0].toUpperCase();
+            if (option.equals("NOSAVE")) {
+                save = false;
+            } else if (option.equals("SAVE")) {
+                save = true;
+            } else {
+                return Resp.encode("ERR Invalid SHUTDOWN option. Use SAVE or NOSAVE", false);
+            }
+        }
+        
+        // Initiate shutdown in a separate thread to avoid blocking the response
+        final boolean shouldSave = save;
+        new Thread(() -> {
+            try {
+                //Thread.sleep(100); // Small delay to allow response to be sent
+                
+                if (shouldSave) {
+                    logger.info("Saving data before shutdown...");
+                    try {
+                        AOF.dumpAllAOF();
+                        logger.info("AOF dump completed successfully.");
+                    } catch (Exception e) {
+                        logger.info("Failed to dump AOF: " + e.getMessage());
+                    }
+                }
+                
+                // Trigger graceful shutdown
+                AsyncTCP.initiateShutdown();
+                AsyncTCP.waitForConnectionsToFinish(10);
+                
+                logger.info("Shutdown complete. Exiting...");
+                System.exit(0);
+            } catch (Exception e) {
+                logger.info("Error during shutdown: " + e.getMessage());
+            }
+        }, "shutdown-command-thread").start();
+        
+        // Return OK to the client
+        return new byte[0];
     }
 }
