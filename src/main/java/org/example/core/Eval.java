@@ -4,6 +4,7 @@ import org.example.model.LegoByteCmd;
 import org.example.model.ObjectStore;
 import org.example.model.ValueType;
 import org.example.model.Encoding;
+import org.example.model.Transaction;
 import org.example.server.AsyncTCP;
 
 import java.io.ByteArrayOutputStream;
@@ -74,6 +75,81 @@ public class Eval {
 
         return output.toByteArray();
 
+    }
+
+    /**
+     * Evaluates commands with transaction support
+     * Similar to Redis MULTI/EXEC/DISCARD behavior
+     */
+    public static byte[] evalToBytes(List<LegoByteCmd> cmds, Transaction transaction) throws Exception {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        for (LegoByteCmd cmd : cmds) {
+            byte[] result;
+            String cmdName = cmd.Cmd();
+
+            // Transaction control commands are always executed immediately
+            switch (cmdName) {
+                case "MULTI" -> {
+                    result = evalMULTI(transaction);
+                    if (result != null) {
+                        output.write(result);
+                    }
+                    continue;
+                }
+                case "EXEC" -> {
+                    result = evalEXEC(transaction);
+                    if (result != null) {
+                        output.write(result);
+                    }
+                    continue;
+                }
+                case "DISCARD" -> {
+                    result = evalDISCARD(transaction);
+                    if (result != null) {
+                        output.write(result);
+                    }
+                    continue;
+                }
+            }
+
+            // If in transaction, queue the command instead of executing
+            if (transaction.isInTransaction()) {
+                transaction.queueCommand(cmd);
+                // Redis responds with "QUEUED" for each command in a transaction
+                output.write(Resp.encode("QUEUED", true));
+                continue;
+            }
+
+            // Not in transaction, execute normally
+            result = evalCommand(cmd);
+            if (result != null) {
+                output.write(result);
+            }
+        }
+
+        return output.toByteArray();
+    }
+
+    /**
+     * Evaluates a single command
+     */
+    private static byte[] evalCommand(LegoByteCmd cmd) throws Exception {
+        return switch (cmd.Cmd()) {
+            case "PING" -> evalPingToBytes(cmd.Args());
+            case "SET" -> evalSETToBytes(cmd.Args());
+            case "GET" -> evalGETToBytes(cmd.Args());
+            case "TTL" -> evalTTLToByte(cmd.Args());
+            case "DEL" -> evalDELToByte(cmd.Args());
+            case "EXPIRE" -> evalEXPIREToByte(cmd.Args());
+            case "BGREWRITEAOF" -> evalBGREWRITEAOF(cmd.Args());
+            case "INCRBY" -> evalINCR(cmd.Args());
+            case "INFO" -> evalINFO(cmd.Args());
+            case "CLIENT" -> evalCLIENT(cmd.Args());
+            case "LATENCY" -> evalLATENCY(cmd.Args());
+            case "SHUTDOWN" -> evalSHUTDOWN(cmd.Args());
+            default -> evalPingToBytes(cmd.Args());
+        };
     }
 
 
@@ -433,7 +509,76 @@ public class Eval {
             }
         }, "shutdown-command-thread").start();
         
-        // Return OK to the client
+        // Redis SHUTDOWN does not send a response - just closes the connection
+        // Returning empty byte array signals no response
         return new byte[0];
+    }
+
+    /**
+     * MULTI - Start a transaction
+     * Returns OK if successful
+     */
+    private static byte[] evalMULTI(Transaction transaction) throws Exception {
+        if (transaction.isInTransaction()) {
+            return Resp.encode("ERR MULTI calls can not be nested", false);
+        }
+        
+        transaction.begin();
+        logger.info("Transaction started. Commands will be queued.");
+        return Resp.encode("OK", true);
+    }
+
+    /**
+     * EXEC - Execute all queued commands in the transaction
+     * Returns array of results from each command
+     */
+    private static byte[] evalEXEC(Transaction transaction) throws Exception {
+        if (!transaction.isInTransaction()) {
+            return Resp.encode("ERR EXEC without MULTI", false);
+        }
+
+        List<LegoByteCmd> queuedCommands = transaction.exec();
+        logger.info("Executing transaction with " + queuedCommands.size() + " queued commands.");
+        
+        // Execute all queued commands and collect results
+        ByteArrayOutputStream results = new ByteArrayOutputStream();
+        
+        // Redis returns an array of results
+        // Format: *<count>\r\n followed by each result
+        String arrayHeader = "*" + queuedCommands.size() + "\r\n";
+        results.write(arrayHeader.getBytes());
+        
+        for (LegoByteCmd cmd : queuedCommands) {
+            try {
+                byte[] result = evalCommand(cmd);
+                if (result != null) {
+                    results.write(result);
+                } else {
+                    // If no result, send nil
+                    results.write("$-1\r\n".getBytes());
+                }
+            } catch (Exception e) {
+                // Redis doesn't rollback on errors, it returns the error for that command
+                String error = "-" + e.getMessage() + "\r\n";
+                results.write(error.getBytes());
+                logger.warning("Error executing command in transaction: " + cmd.Cmd() + " - " + e.getMessage());
+            }
+        }
+        
+        return results.toByteArray();
+    }
+
+    /**
+     * DISCARD - Discard all queued commands and exit transaction
+     */
+    private static byte[] evalDISCARD(Transaction transaction) throws Exception {
+        if (!transaction.isInTransaction()) {
+            return Resp.encode("ERR DISCARD without MULTI", false);
+        }
+        
+        int queuedCount = transaction.getQueuedCount();
+        transaction.discard();
+        logger.info("Transaction discarded. " + queuedCount + " queued commands removed.");
+        return Resp.encode("OK", true);
     }
 }

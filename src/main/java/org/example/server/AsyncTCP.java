@@ -4,6 +4,7 @@ import org.example.core.Eval;
 import org.example.core.Expire;
 import org.example.core.Resp;
 import org.example.model.LegoByteCmd;
+import org.example.model.Transaction;
 
 import java.io.ByteArrayOutputStream;
 import java.io.EOFException;
@@ -47,6 +48,7 @@ public class AsyncTCP {
             server.register(selector, SelectionKey.OP_ACCEPT);
 
             Map<SocketChannel, ByteArrayOutputStream> channelBuffers = new HashMap<>();
+            Map<SocketChannel, Transaction> channelTransactions = new HashMap<>();
             ByteBuffer readBuffer = ByteBuffer.allocate(8192);
 
             while (!isShuttingDown){
@@ -76,6 +78,7 @@ public class AsyncTCP {
                                 client.configureBlocking(false);
                                 client.register(selector, SelectionKey.OP_READ);
                                 channelBuffers.put(client, new ByteArrayOutputStream());
+                                channelTransactions.put(client, new Transaction());
                                 concurrent_connection+=1;
                                 logger.info("Client connected with address: "+ client.getRemoteAddress() + " concurrent client connection: "+ concurrent_connection);
                             }
@@ -83,7 +86,7 @@ public class AsyncTCP {
                             SocketChannel client = (SocketChannel) key.channel();
                             int read = client.read(readBuffer);
                             if (read == -1){
-                                closeClient(client, channelBuffers);
+                                closeClient(client, channelBuffers, channelTransactions);
                                 continue;
                             }
                             if (read == 0){
@@ -105,7 +108,12 @@ public class AsyncTCP {
 //                                }
                             }
                             byte[] full = acc.toByteArray();
-                            processLine(client, full, acc.size());
+                            Transaction transaction = channelTransactions.get(client);
+                            if (transaction == null) {
+                                transaction = new Transaction();
+                                channelTransactions.put(client, transaction);
+                            }
+                            processLine(client, full, acc.size(), transaction);
                             acc.reset();
                             readBuffer.clear();
                         }
@@ -115,7 +123,7 @@ public class AsyncTCP {
                             try {
                                 respondError(e, client);
                             } catch (IOException ignored) {}
-                            closeClient(client, channelBuffers);
+                            closeClient(client, channelBuffers, channelTransactions);
                         } else {
                             logger.warning("Server error: "+ e.getMessage());
                         }
@@ -131,7 +139,7 @@ public class AsyncTCP {
 
     }
 
-    private static void processLine(SocketChannel client, byte[] bufferContent, int length) throws Exception {
+    private static void processLine(SocketChannel client, byte[] bufferContent, int length, Transaction transaction) throws Exception {
         // Trim to the last newline-inclusive chunk
         int end = length;
         // Drop trailing CRLF if present
@@ -164,12 +172,12 @@ public class AsyncTCP {
         }
 
 
-        respond(cmds, client);
+        respond(cmds, client, transaction);
     }
 
-    private static void respond(List<LegoByteCmd> cmds, SocketChannel client) throws IOException {
+    private static void respond(List<LegoByteCmd> cmds, SocketChannel client, Transaction transaction) throws IOException {
         try {
-            byte[] responseBytes = Eval.evalToBytes(cmds);
+            byte[] responseBytes = Eval.evalToBytes(cmds, transaction);
             writeFully(client, responseBytes);
         } catch (Exception e){
             respondError(e, client);
@@ -196,9 +204,10 @@ public class AsyncTCP {
         return concurrent_connection;
     }
 
-    private static void closeClient(SocketChannel client, Map<SocketChannel, ByteArrayOutputStream> channelBuffers){
+    private static void closeClient(SocketChannel client, Map<SocketChannel, ByteArrayOutputStream> channelBuffers, Map<SocketChannel, Transaction> channelTransactions){
         try {
             channelBuffers.remove(client);
+            channelTransactions.remove(client);
             client.close();
         } catch (IOException ignored) {}
         concurrent_connection-=1;
