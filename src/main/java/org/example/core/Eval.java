@@ -4,6 +4,7 @@ import org.example.model.LegoByteCmd;
 import org.example.model.ObjectStore;
 import org.example.model.ValueType;
 import org.example.model.Encoding;
+import org.example.model.Ziplist;
 import org.example.model.Transaction;
 import org.example.server.AsyncTCP;
 
@@ -56,6 +57,8 @@ public class Eval {
                 case "PING" -> result = evalPingToBytes(cmd.Args());
                 case "SET" -> result = evalSETToBytes(cmd.Args());
                 case "GET" -> result = evalGETToBytes(cmd.Args());
+                case "LPUSH" -> result = evalLPUSH(cmd.Args());
+                case "LRANGE" -> result = evalLRANGE(cmd.Args());
                 case "TTL" -> result = evalTTLToByte(cmd.Args());
                 case "DEL" -> result = evalDELToByte(cmd.Args());
                 case "EXPIRE" -> result = evalEXPIREToByte(cmd.Args());
@@ -139,6 +142,8 @@ public class Eval {
             case "PING" -> evalPingToBytes(cmd.Args());
             case "SET" -> evalSETToBytes(cmd.Args());
             case "GET" -> evalGETToBytes(cmd.Args());
+            case "LPUSH" -> evalLPUSH(cmd.Args());
+            case "LRANGE" -> evalLRANGE(cmd.Args());
             case "TTL" -> evalTTLToByte(cmd.Args());
             case "DEL" -> evalDELToByte(cmd.Args());
             case "EXPIRE" -> evalEXPIREToByte(cmd.Args());
@@ -272,17 +277,17 @@ public class Eval {
             switch (arg){
                 case "EX":
                 case "ex":
-                  i++;
+                    i++;
                   if(i==args.length){
                       return Resp.encode("ERR syntax error",false);
-                  }
-                  try {
-                      exDurationMs = Integer.parseInt(args[3]);
+                    }
+                    try {
+                        exDurationMs = Integer.parseInt(args[3]);
                   }catch (Exception e){
-                      throw e;
-                  }
+                        throw e;
+                    }
                   exDurationMs=exDurationMs*1000;
-                  break;
+                    break;
                 default:
                     return Resp.encode("ERR syntax error",false);
 
@@ -302,8 +307,65 @@ public class Eval {
         }
 
         var data = new ObjectStore<String>(value, exDurationMs, ValueType.STRING, encoding);
-        Store.Put(key,data);
-        return Resp.encode("OK",false);
+        Store.Put(key, data);
+        return Resp.encode("OK", false);
+    }
+
+    private static byte[] evalLPUSH(String[] args) throws Exception {
+        if (args.length < 2) {
+            return Resp.encode("ERR wrong number of arguments for 'lpush' command", false);
+        }
+        String key = args[0];
+
+        ObjectStore data = Store.Get(key);
+        Ziplist ziplist;
+
+        if (data == null) {
+            ziplist = new Ziplist();
+            data = new ObjectStore<>(ziplist, -1, ValueType.LIST, Encoding.ZIPLIST);
+            Store.Put(key, data);
+        } else {
+            if (data.getType() != ValueType.LIST) {
+                return Resp.encode("WRONGTYPE Operation against a key holding the wrong kind of value", false);
+            }
+            ziplist = (Ziplist) data.getValue();
+        }
+
+        int length = 0;
+        for (int i = 1; i < args.length; i++) {
+            length = ziplist.lpush(args[i]);
+        }
+
+        return Resp.encode(length, false);
+    }
+
+    private static byte[] evalLRANGE(String[] args) throws Exception {
+        if (args.length < 3) {
+            return Resp.encode("ERR wrong number of arguments for 'lrange' command", false);
+        }
+        String key = args[0];
+        int start;
+        int stop;
+        try {
+            start = Integer.parseInt(args[1]);
+            stop = Integer.parseInt(args[2]);
+        } catch (NumberFormatException e) {
+            return Resp.encode("ERR value is not an integer or out of range", false);
+        }
+
+        ObjectStore data = Store.Get(key);
+        if (data == null) {
+            return Resp.encode(new java.util.ArrayList<String>(), false);
+        }
+
+        if (data.getType() != ValueType.LIST) {
+            return Resp.encode("WRONGTYPE Operation against a key holding the wrong kind of value", false);
+        }
+
+        Ziplist ziplist = (Ziplist) data.getValue();
+        java.util.List<String> result = ziplist.lrange(start, stop);
+
+        return Resp.encode(result, false);
     }
 
     public static byte[] evalPingToBytes(String[] args) throws Exception {
@@ -340,10 +402,10 @@ public class Eval {
         info.append("total_commands_processed:0\n");
         info.append("instantaneous_ops_per_sec:0\n");
         info.append("connected_clients:").append(org.example.server.AsyncTCP.getConnectedClients()).append("\n");
-        
+
         info.append("\n# Keyspace\n");
         info.append("db0:keys=").append(Store.snapshot().size()).append(",expires=0,avg_ttl=0\n");
-        
+
         return Resp.encode(info.toString(), false);
     }
 
@@ -351,7 +413,7 @@ public class Eval {
         if (args.length < 1) {
             return Resp.encode("ERR wrong number of arguments for 'client' command", false);
         }
-        
+
         String subcommand = args[0].toUpperCase();
         switch (subcommand) {
             case "LIST":
@@ -414,7 +476,7 @@ public class Eval {
         if (args.length < 1) {
             return Resp.encode("ERR wrong number of arguments for 'latency' command", false);
         }
-        
+
         String subcommand = args[0].toUpperCase();
         switch (subcommand) {
             case "LATEST":
@@ -469,7 +531,7 @@ public class Eval {
      */
     private static byte[] evalSHUTDOWN(String[] args) throws Exception {
         boolean save = true; // Default: save before shutdown
-        
+
         // Parse optional arguments
         if (args.length > 0) {
             String option = args[0].toUpperCase();
@@ -481,13 +543,13 @@ public class Eval {
                 return Resp.encode("ERR Invalid SHUTDOWN option. Use SAVE or NOSAVE", false);
             }
         }
-        
+
         // Initiate shutdown in a separate thread to avoid blocking the response
         final boolean shouldSave = save;
         new Thread(() -> {
             try {
                 //Thread.sleep(100); // Small delay to allow response to be sent
-                
+
                 if (shouldSave) {
                     logger.info("Saving data before shutdown...");
                     try {
@@ -497,18 +559,18 @@ public class Eval {
                         logger.info("Failed to dump AOF: " + e.getMessage());
                     }
                 }
-                
+
                 // Trigger graceful shutdown
                 AsyncTCP.initiateShutdown();
                 AsyncTCP.waitForConnectionsToFinish(10);
-                
+
                 logger.info("Shutdown complete. Exiting...");
                 System.exit(0);
             } catch (Exception e) {
                 logger.info("Error during shutdown: " + e.getMessage());
             }
         }, "shutdown-command-thread").start();
-        
+
         // Redis SHUTDOWN does not send a response - just closes the connection
         // Returning empty byte array signals no response
         return new byte[0];
@@ -522,7 +584,7 @@ public class Eval {
         if (transaction.isInTransaction()) {
             return Resp.encode("ERR MULTI calls can not be nested", false);
         }
-        
+
         transaction.begin();
         logger.info("Transaction started. Commands will be queued.");
         return Resp.encode("OK", true);
@@ -539,15 +601,15 @@ public class Eval {
 
         List<LegoByteCmd> queuedCommands = transaction.exec();
         logger.info("Executing transaction with " + queuedCommands.size() + " queued commands.");
-        
+
         // Execute all queued commands and collect results
         ByteArrayOutputStream results = new ByteArrayOutputStream();
-        
+
         // Redis returns an array of results
         // Format: *<count>\r\n followed by each result
         String arrayHeader = "*" + queuedCommands.size() + "\r\n";
         results.write(arrayHeader.getBytes());
-        
+
         for (LegoByteCmd cmd : queuedCommands) {
             try {
                 byte[] result = evalCommand(cmd);
@@ -564,7 +626,7 @@ public class Eval {
                 logger.warning("Error executing command in transaction: " + cmd.Cmd() + " - " + e.getMessage());
             }
         }
-        
+
         return results.toByteArray();
     }
 
@@ -575,7 +637,7 @@ public class Eval {
         if (!transaction.isInTransaction()) {
             return Resp.encode("ERR DISCARD without MULTI", false);
         }
-        
+
         int queuedCount = transaction.getQueuedCount();
         transaction.discard();
         logger.info("Transaction discarded. " + queuedCount + " queued commands removed.");

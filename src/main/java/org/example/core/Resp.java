@@ -181,6 +181,24 @@ public class Resp {
         } else if (value instanceof Integer) {
             String s=":"+value.toString()+"\r\n";
             return s.getBytes();
+        } else if (value instanceof List) {
+            List<?> list = (List<?>) value;
+            StringBuilder sb = new StringBuilder();
+            sb.append("*").append(list.size()).append("\r\n");
+            for (Object item : list) {
+                if (item == null) {
+                    sb.append("$-1\r\n");
+                } else if (item instanceof String) {
+                    String str = (String) item;
+                    sb.append("$").append(str.length()).append("\r\n").append(str).append("\r\n");
+                } else if (item instanceof Integer || item instanceof Long) {
+                    sb.append(":").append(item).append("\r\n");
+                } else {
+                    String str = item.toString();
+                    sb.append("$").append(str.length()).append("\r\n").append(str).append("\r\n");
+                }
+            }
+            return sb.toString().getBytes(StandardCharsets.UTF_8);
         }
         String s = "$-1\r\n";
         return s.getBytes();
