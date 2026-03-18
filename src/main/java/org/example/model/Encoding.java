@@ -3,5 +3,7 @@ package org.example.model;
 public enum Encoding {
     RAW, // Raw byte/string representation
     INT, // Inlined integer encoding like Redis's embstr/int
-    ZIPLIST; // Ziplist encoding for lists and hashes
+    ZIPLIST, // Ziplist encoding for lists and hashes
+    INTSET, // Intset encoding for sets of integers
+    HASHTABLE; // Hashtable encoding for sets and hashes
 }

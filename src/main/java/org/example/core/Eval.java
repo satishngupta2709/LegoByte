@@ -5,6 +5,7 @@ import org.example.model.ObjectStore;
 import org.example.model.ValueType;
 import org.example.model.Encoding;
 import org.example.model.Ziplist;
+import org.example.model.Intset;
 import org.example.model.Transaction;
 import org.example.server.AsyncTCP;
 
@@ -12,8 +13,12 @@ import java.io.ByteArrayOutputStream;
 import java.io.OutputStream;
 import java.net.Socket;
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.logging.Logger;
+import java.util.ArrayList;
+import java.util.Collections;
 
 import static org.example.core.Resp.encode;
 
@@ -64,6 +69,11 @@ public class Eval {
                 case "EXPIRE" -> result = evalEXPIREToByte(cmd.Args());
                 case "BGREWRITEAOF" -> result = evalBGREWRITEAOF(cmd.Args());
                 case "INCRBY" -> result = evalINCR(cmd.Args());
+                case "SADD" -> result = evalSADD(cmd.Args());
+                case "SMEMBERS" -> result = evalSMEMBERS(cmd.Args());
+                case "SISMEMBER" -> result = evalSISMEMBER(cmd.Args());
+                case "SREM" -> result = evalSREM(cmd.Args());
+                case "SCARD" -> result = evalSCARD(cmd.Args());
                 case "INFO" -> result = evalINFO(cmd.Args());
                 case "CLIENT" -> result = evalCLIENT(cmd.Args());
                 case "LATENCY" -> result = evalLATENCY(cmd.Args());
@@ -149,6 +159,11 @@ public class Eval {
             case "EXPIRE" -> evalEXPIREToByte(cmd.Args());
             case "BGREWRITEAOF" -> evalBGREWRITEAOF(cmd.Args());
             case "INCRBY" -> evalINCR(cmd.Args());
+            case "SADD" -> evalSADD(cmd.Args());
+            case "SMEMBERS" -> evalSMEMBERS(cmd.Args());
+            case "SISMEMBER" -> evalSISMEMBER(cmd.Args());
+            case "SREM" -> evalSREM(cmd.Args());
+            case "SCARD" -> evalSCARD(cmd.Args());
             case "INFO" -> evalINFO(cmd.Args());
             case "CLIENT" -> evalCLIENT(cmd.Args());
             case "LATENCY" -> evalLATENCY(cmd.Args());
@@ -164,14 +179,15 @@ public class Eval {
             return Resp.encode("ERR wrong number of arguments for 'incr' command",false);
         }
         String key = args[0];
-        ObjectStore<String> obj = Store.Get(key);
-        if(obj==null){
+        ObjectStore<?> obj = Store.Get(key);
+        if (obj == null) {
             // Create with 0, no expiry
-            obj = new ObjectStore<>("0", -1, ValueType.STRING, Encoding.INT);
-            Store.Put(key, obj);
+            ObjectStore<String> newObj = new ObjectStore<>("0", -1, ValueType.STRING, Encoding.INT);
+            Store.Put(key, newObj);
+            obj = newObj;
         }
 
-        String current = obj.getValue();
+        String current = (String) obj.getValue();
         if (current == null) {
             current = "0";
         }
@@ -182,7 +198,7 @@ public class Eval {
             return  Resp.encode("ERR value is not an integer or out of range",false);
         }
         num += 1L;
-        obj.setValue(Long.toString(num));
+        ((ObjectStore<String>) obj).setValue(Long.toString(num));
         obj.setType(ValueType.STRING);
         obj.setEncoding(Encoding.INT);
         return Resp.encode((int)num,false);
@@ -337,6 +353,175 @@ public class Eval {
         }
 
         return Resp.encode(length, false);
+    }
+
+    private static byte[] evalSADD(String[] args) throws Exception {
+        if (args.length < 2) {
+            return Resp.encode("ERR wrong number of arguments for 'sadd' command", false);
+        }
+        String key = args[0];
+        ObjectStore data = Store.Get(key);
+
+        if (data == null) {
+            // Check if the first member being added is an integer
+            try {
+                Long.parseLong(args[1]);
+                Intset intset = new Intset();
+                data = new ObjectStore<>(intset, -1, ValueType.SET, Encoding.INTSET);
+            } catch (NumberFormatException e) {
+                Set<String> set = new HashSet<>();
+                data = new ObjectStore<>(set, -1, ValueType.SET, Encoding.HASHTABLE);
+            }
+            Store.Put(key, data);
+        } else if (data.getType() != ValueType.SET) {
+            return Resp.encode("WRONGTYPE Operation against a key holding the wrong kind of value", false);
+        }
+
+        int added = 0;
+        if (data.getEncoding() == Encoding.INTSET) {
+            Intset intset = (Intset) data.getValue();
+            for (int i = 1; i < args.length; i++) {
+                try {
+                    long val = Long.parseLong(args[i]);
+                    if (intset.add(val)) {
+                        added++;
+                    }
+                } catch (NumberFormatException e) {
+                    // Switch to hashtable
+                    Set<String> set = new HashSet<>();
+                    for (Long l : intset.getAll()) {
+                        set.add(l.toString());
+                    }
+                    ((ObjectStore<Object>) data).setValue(set);
+                    data.setEncoding(Encoding.HASHTABLE);
+                    // Add the remaining elements including the current non-int one
+                    for (int j = i; j < args.length; j++) {
+                        if (set.add(args[j])) {
+                            added++;
+                        }
+                    }
+                    break;
+                }
+            }
+        } else {
+            Set<String> set = (Set<String>) data.getValue();
+            for (int i = 1; i < args.length; i++) {
+                if (set.add(args[i])) {
+                    added++;
+                }
+            }
+        }
+        return Resp.encode(added, false);
+    }
+
+    private static byte[] evalSMEMBERS(String[] args) throws Exception {
+        if (args.length != 1) {
+            return Resp.encode("ERR wrong number of arguments for 'smembers' command", false);
+        }
+        String key = args[0];
+        ObjectStore data = Store.Get(key);
+
+        if (data == null) {
+            return Resp.encode(Collections.emptyList(), false);
+        }
+        if (data.getType() != ValueType.SET) {
+            return Resp.encode("WRONGTYPE Operation against a key holding the wrong kind of value", false);
+        }
+
+        if (data.getEncoding() == Encoding.INTSET) {
+            Intset intset = (Intset) data.getValue();
+            List<String> members = new ArrayList<>();
+            for (Long l : intset.getAll()) {
+                members.add(l.toString());
+            }
+            return Resp.encode(members, false);
+        } else {
+            Set<String> set = (Set<String>) data.getValue();
+            return Resp.encode(new ArrayList<>(set), false);
+        }
+    }
+
+    private static byte[] evalSISMEMBER(String[] args) throws Exception {
+        if (args.length != 2) {
+            return Resp.encode("ERR wrong number of arguments for 'sismember' command", false);
+        }
+        String key = args[0];
+        String member = args[1];
+        ObjectStore data = Store.Get(key);
+
+        if (data == null || data.getType() != ValueType.SET) {
+            return Resp.encode(0, false);
+        }
+
+        if (data.getEncoding() == Encoding.INTSET) {
+            Intset intset = (Intset) data.getValue();
+            try {
+                long val = Long.parseLong(member);
+                return Resp.encode(intset.contains(val) ? 1 : 0, false);
+            } catch (NumberFormatException e) {
+                return Resp.encode(0, false);
+            }
+        } else {
+            Set<String> set = (Set<String>) data.getValue();
+            return Resp.encode(set.contains(member) ? 1 : 0, false);
+        }
+    }
+
+    private static byte[] evalSREM(String[] args) throws Exception {
+        if (args.length < 2) {
+            return Resp.encode("ERR wrong number of arguments for 'srem' command", false);
+        }
+        String key = args[0];
+        ObjectStore data = Store.Get(key);
+
+        if (data == null || data.getType() != ValueType.SET) {
+            return Resp.encode(0, false);
+        }
+
+        int removed = 0;
+        if (data.getEncoding() == Encoding.INTSET) {
+            Intset intset = (Intset) data.getValue();
+            for (int i = 1; i < args.length; i++) {
+                try {
+                    long val = Long.parseLong(args[i]);
+                    if (intset.remove(val)) {
+                        removed++;
+                    }
+                } catch (NumberFormatException ignored) {
+                }
+            }
+        } else {
+            Set<String> set = (Set<String>) data.getValue();
+            for (int i = 1; i < args.length; i++) {
+                if (set.remove(args[i])) {
+                    removed++;
+                }
+            }
+        }
+        return Resp.encode(removed, false);
+    }
+
+    private static byte[] evalSCARD(String[] args) throws Exception {
+        if (args.length != 1) {
+            return Resp.encode("ERR wrong number of arguments for 'scard' command", false);
+        }
+        String key = args[0];
+        ObjectStore data = Store.Get(key);
+
+        if (data == null) {
+            return Resp.encode(0, false);
+        }
+        if (data.getType() != ValueType.SET) {
+            return Resp.encode("WRONGTYPE Operation against a key holding the wrong kind of value", false);
+        }
+
+        if (data.getEncoding() == Encoding.INTSET) {
+            Intset intset = (Intset) data.getValue();
+            return Resp.encode(intset.size(), false);
+        } else {
+            Set<String> set = (Set<String>) data.getValue();
+            return Resp.encode(set.size(), false);
+        }
     }
 
     private static byte[] evalLRANGE(String[] args) throws Exception {

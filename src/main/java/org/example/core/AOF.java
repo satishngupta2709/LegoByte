@@ -12,9 +12,9 @@ public class AOF {
 				java.nio.file.StandardOpenOption.CREATE,
 				java.nio.file.StandardOpenOption.TRUNCATE_EXISTING,
 				java.nio.file.StandardOpenOption.WRITE)) {
-			for (java.util.Map.Entry<String, org.example.model.ObjectStore> entry : Store.snapshot().entrySet()) {
+			for (java.util.Map.Entry<String, org.example.model.ObjectStore<?>> entry : Store.snapshot().entrySet()) {
 				String key = entry.getKey();
-				org.example.model.ObjectStore obj = entry.getValue();
+				org.example.model.ObjectStore<?> obj = entry.getValue();
 				if (obj == null) {
 					continue;
 				}
@@ -26,24 +26,64 @@ public class AOF {
 		}
 	}
 
-	
-// TODO: Support non-kv data structures
-// TODO: Support sync write
-	public static void dumpKey(String key, org.example.model.ObjectStore obj, java.io.BufferedWriter writer) throws java.io.IOException {
+	// TODO: Support non-kv data structures
+	// TODO: Support sync write
+	public static void dumpKey(String key, org.example.model.ObjectStore<?> obj, java.io.BufferedWriter writer)
+			throws java.io.IOException {
 		Object value = obj.getValue();
-		String v = value == null ? "" : String.valueOf(value);
+		if (value == null)
+			return;
+
 		long expiresAt = obj.getExpiresAt();
 		long now = java.time.Instant.now().toEpochMilli();
-		StringBuilder line = new StringBuilder();
-		line.append("SET ").append(key).append(' ').append(v);
+		long remainingSec = -1;
 		if (expiresAt != -1) {
 			long remainingMs = expiresAt - now;
 			if (remainingMs > 0) {
-				long remainingSec = (remainingMs + 999) / 1000; // round up to next second
-				line.append(' ').append("EX ").append(remainingSec);
+				remainingSec = (remainingMs + 999) / 1000;
+			} else {
+				return; // Expired
 			}
 		}
-		writer.write(line.toString());
-		writer.newLine();
+
+		if (obj.getType() == org.example.model.ValueType.SET) {
+			java.util.List<String> members = new java.util.ArrayList<>();
+			if (obj.getEncoding() == org.example.model.Encoding.INTSET) {
+				org.example.model.Intset intset = (org.example.model.Intset) value;
+				for (Long l : intset.getAll()) {
+					members.add(l.toString());
+				}
+			} else {
+				java.util.Set<String> set = (java.util.Set<String>) value;
+				members.addAll(set);
+			}
+
+			if (members.isEmpty())
+				return;
+
+			StringBuilder line = new StringBuilder();
+			line.append("SADD ").append(key);
+			for (String member : members) {
+				line.append(' ').append(member);
+			}
+			writer.write(line.toString());
+			writer.newLine();
+		} else {
+			// Default to SET for strings/other
+			String v = String.valueOf(value);
+			StringBuilder line = new StringBuilder();
+			line.append("SET ").append(key).append(' ').append(v);
+			if (remainingSec != -1) {
+				line.append(' ').append("EX ").append(remainingSec);
+			}
+			writer.write(line.toString());
+			writer.newLine();
+		}
+
+		if (remainingSec != -1 && obj.getType() == org.example.model.ValueType.SET) {
+			// Sets need a separate EXPIRE command if they have expiry
+			writer.write("EXPIRE " + key + " " + remainingSec);
+			writer.newLine();
+		}
 	}
 }
